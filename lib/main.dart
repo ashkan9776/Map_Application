@@ -25,6 +25,8 @@ void main() async {
 }
 
 class NavigationApp extends StatelessWidget {
+  const NavigationApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -61,6 +63,8 @@ class NavigationApp extends StatelessWidget {
 
 // صفحه اسپلش
 class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
   @override
   _SplashScreenState createState() => _SplashScreenState();
 }

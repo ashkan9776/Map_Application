@@ -7,7 +7,7 @@ import '../services/geocoding_service.dart';
 class SearchBottomSheet extends StatefulWidget {
   final Function(Place) onPlaceSelected;
 
-  SearchBottomSheet({required this.onPlaceSelected});
+  const SearchBottomSheet({super.key, required this.onPlaceSelected});
 
   @override
   _SearchBottomSheetState createState() => _SearchBottomSheetState();

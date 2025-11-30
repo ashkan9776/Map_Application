@@ -1,8 +1,9 @@
 // screens/enhanced_map_screen.dart
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/models/favorite_place.dart.dart';
+import 'package:flutter_application_1/models/favorite_place.dart';
 import 'package:flutter_application_1/models/route_info.dart';
 import 'package:flutter_application_1/services/database_service.dart';
 import 'package:flutter_application_1/services/enhanced_routing_service.dart';
@@ -22,6 +23,8 @@ import 'package:lottie/lottie.dart' hide Marker;
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 
 class EnhancedMapScreen extends StatefulWidget {
+  const EnhancedMapScreen({super.key});
+
   @override
   _EnhancedMapScreenState createState() => _EnhancedMapScreenState();
 }
@@ -40,12 +43,18 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
   LatLng? _destination;
   List<RouteInfo> _routes = [];
   RouteInfo? _selectedRoute;
-  List<Marker> _markers = [];
+  final List<Marker> _markers = [];
   List<FavoritePlace> _favorites = [];
   TransportMode _selectedMode = TransportMode.driving;
   bool _isNavigating = false;
   bool _isLoading = false;
   String _mapStyle = 'default';
+  double _remainingDistanceKm = 0;
+  double _remainingTimeMin = 0;
+  double _navigationProgress = 0;
+  StreamSubscription<LatLng>? _locationSubscription;
+  StreamSubscription<NavigationStep>? _stepSubscription;
+  StreamSubscription<Map<String, dynamic>>? _progressSubscription;
 
   // در EnhancedMapScreen، این متدها رو اضافه کن:
 
@@ -69,8 +78,13 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
 
   // Listener های مسیریابی
   void _setupNavigationListeners() {
+    _locationSubscription?.cancel();
+    _stepSubscription?.cancel();
+    _progressSubscription?.cancel();
+
     // گوش دادن به تغییرات موقعیت
-    LiveNavigationService.locationStream.listen((location) {
+    _locationSubscription =
+        LiveNavigationService.locationStream.listen((location) {
       if (mounted) {
         setState(() {
           _currentLocation = location;
@@ -85,19 +99,28 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
     });
 
     // گوش دادن به تغییرات مراحل
-    LiveNavigationService.stepStream.listen((step) {
+    _stepSubscription = LiveNavigationService.stepStream.listen((step) {
       if (mounted) {
         _showStepDialog(step);
       }
     });
 
     // گوش دادن به پیشرفت
-    LiveNavigationService.progressStream.listen((progress) {
+    _progressSubscription =
+        LiveNavigationService.progressStream.listen((progress) {
       if (mounted) {
         setState(() {
           if (progress.containsKey('arrived') && progress['arrived']) {
             _isNavigating = false;
             _showArrivalDialog();
+            _remainingDistanceKm = 0;
+            _remainingTimeMin = 0;
+            _navigationProgress = 0;
+          } else {
+            _remainingDistanceKm =
+                (progress['remainingDistance'] ?? 0).toDouble();
+            _remainingTimeMin = (progress['remainingTime'] ?? 0).toDouble();
+            _navigationProgress = (progress['progress'] ?? 0.0).toDouble();
           }
         });
       }
@@ -111,6 +134,19 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
       return;
     }
 
+    if (_destination == null) {
+      _showErrorSnackBar('مقصدی برای مسیریابی انتخاب نشده است');
+      return;
+    }
+
+    if (_currentLocation == null) {
+      await _getCurrentLocation();
+      if (_currentLocation == null) {
+        _showErrorSnackBar('موقعیت فعلی در دسترس نیست');
+        return;
+      }
+    }
+
     if (_isNavigating) {
       // توقف مسیریابی
       await LiveNavigationService.stopNavigation();
@@ -120,6 +156,9 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
         _routes.clear();
         _selectedRoute = null;
         _destination = null;
+        _remainingDistanceKm = 0;
+        _remainingTimeMin = 0;
+        _navigationProgress = 0;
         _updateMarkers();
       });
       _showSuccessSnackBar('مسیریابی متوقف شد');
@@ -134,6 +173,9 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
       setState(() {
         _isLoading = false;
         _isNavigating = success;
+        _navigationProgress = 0;
+        _remainingDistanceKm = _selectedRoute?.distance ?? 0;
+        _remainingTimeMin = _selectedRoute?.duration ?? 0;
       });
 
       if (success) {
@@ -240,6 +282,9 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
                 _destination = null;
                 _selectedRoute = null;
                 _routes.clear();
+                _remainingDistanceKm = 0;
+                _remainingTimeMin = 0;
+                _navigationProgress = 0;
                 _updateMarkers();
               });
             },
@@ -269,6 +314,9 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
   // در dispose:
   @override
   void dispose() {
+    _locationSubscription?.cancel();
+    _stepSubscription?.cancel();
+    _progressSubscription?.cancel();
     _pulseController.dispose();
     _routeController.dispose();
     LiveNavigationService.dispose(); // اضافه کن
@@ -443,7 +491,7 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
 
             // Transport Mode Selector
             if (!_isNavigating)
-              Container(
+              SizedBox(
                 height: 50,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
@@ -560,26 +608,30 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
                 value: '${_selectedRoute!.distance.toStringAsFixed(1)} کیلومتر',
                 color: Colors.green,
               ),
-              _buildInfoCard(
-                icon: _getModeIcon(_selectedRoute!.mode),
-                title: 'نوع',
-                value: _getModeTitle(_selectedRoute!.mode),
-                color: Colors.orange,
-              ),
-            ],
+          _buildInfoCard(
+            icon: _getModeIcon(_selectedRoute!.mode),
+            title: 'نوع',
+            value: _getModeTitle(_selectedRoute!.mode),
+            color: Colors.orange,
           ),
+        ],
+      ),
+        if (_isNavigating) ...[
+          SizedBox(height: 12),
+          _buildNavigationProgress(),
+        ],
 
-          if (_routes.length > 1) ...[
-            SizedBox(height: 16),
-            Text(
-              'گزینه‌های مسیر',
+      if (_routes.length > 1) ...[
+        SizedBox(height: 16),
+        Text(
+          'گزینه‌های مسیر',
               style: GoogleFonts.vazirmatn(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
             ),
             SizedBox(height: 8),
-            Container(
+            SizedBox(
               height: 60,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
@@ -606,6 +658,7 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Icon(
                             _getModeIcon(route.mode),
@@ -649,6 +702,8 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(icon, color: color, size: 24),
           SizedBox(height: 4),
@@ -669,6 +724,57 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
     );
   }
 
+  Widget _buildNavigationProgress() {
+    final double? progressValue = _navigationProgress.isNaN
+        ? null
+        : _navigationProgress.clamp(0.0, 1.0).toDouble();
+    final distanceText = _remainingDistanceKm >= 1
+        ? '${_remainingDistanceKm.toStringAsFixed(1)} کیلومتر'
+        : '${(_remainingDistanceKm * 1000).toStringAsFixed(0)} متر';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: LinearProgressIndicator(
+            value: progressValue,
+            minHeight: 8,
+            backgroundColor: Colors.grey[200],
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+          ),
+        ),
+        SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'باقی‌مانده مسیر',
+              style: GoogleFonts.vazirmatn(color: Colors.grey[700]),
+            ),
+            Text(
+              distanceText,
+              style: GoogleFonts.vazirmatn(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'زمان تخمینی',
+              style: GoogleFonts.vazirmatn(color: Colors.grey[700]),
+            ),
+            Text(
+              '${_remainingTimeMin.toStringAsFixed(0)} دقیقه',
+              style: GoogleFonts.vazirmatn(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _buildNavigationControls() {
     return Padding(
       padding: EdgeInsets.all(16),
@@ -676,7 +782,7 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
         children: [
           Expanded(
             child: ElevatedButton.icon(
-              onPressed: _startNavigation,
+              onPressed: _isLoading ? null : _startNavigation,
               icon: Icon(_isNavigating ? Icons.stop : Icons.navigation),
               label: Text(
                 _isNavigating ? 'پایان مسیریابی' : 'شروع مسیریابی',
@@ -1037,21 +1143,41 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
     setState(() => _isLoading = true);
 
     try {
-      _routes = await EnhancedRoutingService.getMultipleRoutes(
+      final routes = await EnhancedRoutingService.getMultipleRoutes(
         _currentLocation!,
         _destination!,
+        preferredMode: _selectedMode,
       );
 
-      if (_routes.isNotEmpty) {
+      if (routes.isNotEmpty) {
+        final selectedRoute = routes.firstWhere(
+          (route) => route.mode == _selectedMode,
+          orElse: () => routes.first,
+        );
+
+        if (!mounted) return;
+
         setState(() {
-          _selectedRoute = _routes.first;
+          _routes = routes;
+          _selectedRoute = selectedRoute;
+          _isNavigating = false;
+          _navigationProgress = 0;
+          _remainingDistanceKm = selectedRoute.distance;
+          _remainingTimeMin = selectedRoute.duration;
         });
 
         _routeController.forward();
         await VoiceNavigationService.announceRouteStart(
-          _selectedRoute!.distance,
-          _selectedRoute!.duration,
+          selectedRoute.distance,
+          selectedRoute.duration,
         );
+      } else {
+        if (!mounted) return;
+        setState(() {
+          _routes = [];
+          _selectedRoute = null;
+        });
+        _showErrorSnackBar('مسیر معتبری یافت نشد');
       }
     } catch (e) {
       _showErrorSnackBar('خطا در محاسبه مسیر: $e');
@@ -1065,13 +1191,32 @@ class _EnhancedMapScreenState extends State<EnhancedMapScreen>
 
     setState(() => _selectedMode = mode);
 
+    if (_routes.isNotEmpty) {
+      final matchingRoute = _routes.firstWhere(
+        (route) => route.mode == mode,
+        orElse: () => _routes.first,
+      );
+
+      setState(() {
+        _selectedRoute = matchingRoute;
+        _remainingDistanceKm = matchingRoute.distance;
+        _remainingTimeMin = matchingRoute.duration;
+        _navigationProgress = 0;
+      });
+    }
+
     if (_destination != null) {
       await _calculateRoute();
     }
   }
 
   void _selectRoute(RouteInfo route) {
-    setState(() => _selectedRoute = route);
+    setState(() {
+      _selectedRoute = route;
+      _remainingDistanceKm = route.distance;
+      _remainingTimeMin = route.duration;
+      _navigationProgress = 0;
+    });
   }
 
   Future<void> _addToFavorites() async {

@@ -1,6 +1,6 @@
 // widgets/add_favorite_dialog.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/models/favorite_place.dart.dart';
+import 'package:flutter_application_1/models/favorite_place.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -10,7 +10,7 @@ class AddFavoriteDialog extends StatefulWidget {
   final FavoritePlace? existingFavorite;
   final Function(FavoritePlace) onSave;
 
-  AddFavoriteDialog({
+  const AddFavoriteDialog({super.key, 
     required this.location,
     required this.address,
     this.existingFavorite,
@@ -142,7 +142,6 @@ class _AddFavoriteDialogState extends State<AddFavoriteDialog> {
                 ),
                 ElevatedButton(
                   onPressed: _saveFavorite,
-                  child: Text('ذخیره'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
@@ -150,6 +149,7 @@ class _AddFavoriteDialogState extends State<AddFavoriteDialog> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
+                  child: Text('ذخیره'),
                 ),
               ],
             ),

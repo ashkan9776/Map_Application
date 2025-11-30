@@ -5,7 +5,7 @@ import '../services/geocoding_service.dart';
 class SearchDialog extends StatefulWidget {
   final Function(Place) onPlaceSelected;
 
-  SearchDialog({required this.onPlaceSelected});
+  const SearchDialog({super.key, required this.onPlaceSelected});
 
   @override
   _SearchDialogState createState() => _SearchDialogState();

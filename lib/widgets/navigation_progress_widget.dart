@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/live_navigation_service.dart';
 
 class NavigationProgressWidget extends StatefulWidget {
+  const NavigationProgressWidget({super.key});
+
   @override
   _NavigationProgressWidgetState createState() => _NavigationProgressWidgetState();
 }

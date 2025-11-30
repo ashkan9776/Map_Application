@@ -1,5 +1,5 @@
 // services/database_service.dart
-import 'package:flutter_application_1/models/favorite_place.dart.dart';
+import 'package:flutter_application_1/models/favorite_place.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 

@@ -1,7 +1,6 @@
 // services/live_navigation_service.dart
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/route_info.dart';
@@ -26,7 +25,7 @@ class NavigationStep {
 class LiveNavigationService {
   static StreamSubscription<Position>? _positionSubscription;
   static RouteInfo? _currentRoute;
-  static List<NavigationStep> _navigationSteps = [];
+  static final List<NavigationStep> _navigationSteps = [];
   static int _currentStepIndex = 0;
   static bool _isNavigating = false;
   static LatLng? _currentLocation;

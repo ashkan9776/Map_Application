@@ -11,7 +11,6 @@ class EnhancedRoutingService {
   static const String _baseUrl = 'https://api.openrouteservice.org';
 
   // Fallback API برای حالت خطا
-  static const String _fallbackBaseUrl = 'https://routing.openstreetmap.de';
 
   static Future<RouteInfo> getRoute(
     LatLng start,
@@ -243,22 +242,26 @@ class EnhancedRoutingService {
   // دریافت چندین مسیر
   static Future<List<RouteInfo>> getMultipleRoutes(
     LatLng start,
-    LatLng end,
-  ) async {
-    List<RouteInfo> routes = [];
+    LatLng end, {
+    TransportMode? preferredMode,
+  }) async {
+    final List<RouteInfo> routes = [];
 
-    // سعی در دریافت مسیر برای هر نوع حمل‌ونقل
-    for (TransportMode mode in TransportMode.values) {
+    // اولویت دادن به مد انتخاب شده
+    final modes = <TransportMode>{
+      if (preferredMode != null) preferredMode,
+      ...TransportMode.values,
+    }.toList();
+
+    for (TransportMode mode in modes) {
       try {
         final route = await getRoute(start, end, mode);
         routes.add(route);
       } catch (e) {
         print('خطا در دریافت مسیر ${mode.toString()}: $e');
-        // اگر یک مسیر خطا داد، ادامه بده
       }
     }
 
-    // اگر هیچ مسیری دریافت نشد، حداقل یک مسیر ساده بساز
     if (routes.isEmpty) {
       routes.add(_getSimpleRoute(start, end, TransportMode.driving));
     }
