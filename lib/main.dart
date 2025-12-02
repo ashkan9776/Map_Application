@@ -11,7 +11,7 @@ void main() async {
 
   // تنظیم وضعیت نوار وضعیت
   SystemChrome.setSystemUIOverlayStyle(
-    SystemUiOverlayStyle(
+    const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
     ),
@@ -21,7 +21,7 @@ void main() async {
   await DatabaseService.database;
   await VoiceNavigationService.initialize();
 
-  runApp(NavigationApp());
+  runApp(const NavigationApp());
 }
 
 class NavigationApp extends StatelessWidget {
@@ -36,7 +36,7 @@ class NavigationApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         fontFamily: GoogleFonts.vazirmatn().fontFamily,
         visualDensity: VisualDensity.adaptivePlatformDensity,
-        appBarTheme: AppBarTheme(
+        appBarTheme: const AppBarTheme(
           elevation: 0,
           backgroundColor: Colors.transparent,
           systemOverlayStyle: SystemUiOverlayStyle.light,
@@ -56,7 +56,7 @@ class NavigationApp extends StatelessWidget {
           ),
         ),
       ),
-      home: SplashScreen(),
+      home: const SplashScreen(),
     );
   }
 }
@@ -66,21 +66,34 @@ class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  _SplashScreenState createState() => _SplashScreenState();
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _scaleAnimation;
+  // Constants for animations and UI
+  static const _animationDuration = Duration(seconds: 2);
+  static const _navigationDelay = Duration(milliseconds: 500);
+  static const _transitionDuration = Duration(milliseconds: 800);
+  static const _iconSize = 60.0;
+  static const _containerSize = 120.0;
+  static const _primaryColor = Color(0xFF4A90E2);
+  static const _gradientColors = [
+    Color(0xFF4A90E2),
+    Color(0xFF357ABD),
+    Color(0xFF1E3A8A)
+  ];
+
+  late final AnimationController _animationController;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
 
     _animationController = AnimationController(
-      duration: Duration(seconds: 2),
+      duration: _animationDuration,
       vsync: this,
     );
 
@@ -97,17 +110,19 @@ class _SplashScreenState extends State<SplashScreen>
 
   void _startAnimation() async {
     await _animationController.forward();
-    await Future.delayed(Duration(milliseconds: 500));
+    await Future.delayed(_navigationDelay);
+
+    if (!mounted) return; // Check if the widget is still in the tree
 
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            EnhancedMapScreen(),
+            const EnhancedMapScreen(),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
-        transitionDuration: Duration(milliseconds: 800),
+        transitionDuration: _transitionDuration,
       ),
     );
   }
@@ -116,11 +131,11 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF4A90E2), Color(0xFF357ABD), Color(0xFF1E3A8A)],
+            colors: _gradientColors,
           ),
         ),
         child: Center(
@@ -131,68 +146,63 @@ class _SplashScreenState extends State<SplashScreen>
                 opacity: _fadeAnimation,
                 child: ScaleTransition(
                   scale: _scaleAnimation,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
-                              blurRadius: 20,
-                              spreadRadius: 5,
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.navigation,
-                          size: 60,
-                          color: Color(0xFF4A90E2),
-                        ),
-                      ),
-
-                      SizedBox(height: 30),
-
-                      Text(
-                        'مسیریاب پیشرفته',
-                        style: GoogleFonts.vazirmatn(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-
-                      SizedBox(height: 10),
-
-                      Text(
-                        'مسیریابی هوشمند و دقیق',
-                        style: GoogleFonts.vazirmatn(
-                          fontSize: 16,
-                          color: Colors.white.withOpacity(0.9),
-                        ),
-                      ),
-
-                      SizedBox(height: 50),
-
-                      SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                          strokeWidth: 3,
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: child,
                 ),
               );
             },
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: _containerSize,
+                  height: _containerSize,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.navigation,
+                    size: _iconSize,
+                    color: _primaryColor,
+                  ),
+                ),
+                const SizedBox(height: 30),
+                Text(
+                  'مسیریاب پیشرفته',
+                  style: GoogleFonts.vazirmatn(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'مسیریابی هوشمند و دقیق',
+                  style: GoogleFonts.vazirmatn(
+                    fontSize: 16,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
+                ),
+                const SizedBox(height: 50),
+                const SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Colors.white,
+                    ),
+                    strokeWidth: 3,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

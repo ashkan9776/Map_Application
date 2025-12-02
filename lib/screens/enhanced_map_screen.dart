@@ -3,15 +3,14 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/models/favorite_place.dart';
-import 'package:flutter_application_1/models/route_info.dart';
-import 'package:flutter_application_1/services/database_service.dart';
-import 'package:flutter_application_1/services/enhanced_routing_service.dart';
-import 'package:flutter_application_1/services/geocoding_service.dart';
-import 'package:flutter_application_1/services/live_navigation_service.dart';
-import 'package:flutter_application_1/services/voice_navigation_service.dart';
-import 'package:flutter_application_1/widgets/add_favorite_dialog.dart';
-import 'package:flutter_application_1/widgets/search_bottom_sheet.dart';
+import 'package:map_application/models/route_info.dart';
+import 'package:map_application/services/database_service.dart';
+import 'package:map_application/services/enhanced_routing_service.dart';
+import 'package:map_application/services/geocoding_service.dart';
+import 'package:map_application/services/live_navigation_service.dart';
+import 'package:map_application/services/voice_navigation_service.dart';
+import 'package:map_application/widgets/add_favorite_dialog.dart';
+import 'package:map_application/widgets/search_bottom_sheet.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -21,6 +20,9 @@ import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:glassmorphism/glassmorphism.dart';
 import 'package:lottie/lottie.dart' hide Marker;
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+
+import '../models/favorite_place.dart';
+import '../models/route_info.dart';
 
 class EnhancedMapScreen extends StatefulWidget {
   const EnhancedMapScreen({super.key});

@@ -1,63 +1,97 @@
 // services/enhanced_routing_service.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import '../models/route_info.dart';
 
+// --- Custom Routing Exceptions ---
+
+/// Base exception for all routing-related errors.
+class RoutingException implements Exception {
+  final String message;
+  RoutingException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+/// Thrown when no route can be found between the start and end points.
+class NoRouteFoundException extends RoutingException {
+  NoRouteFoundException()
+      : super('هیچ مسیر معتبری بین مبدا و مقصد انتخاب شده یافت نشد.');
+}
+
+/// Thrown when there's a network connectivity issue.
+class NetworkException extends RoutingException {
+  NetworkException()
+      : super('اتصال اینترنت برقرار نیست. لطفاً شبکه خود را بررسی کنید.');
+}
+
+/// Thrown when the API key is invalid, expired, or has hit its quota.
+class ApiKeyException extends RoutingException {
+  ApiKeyException({String details = 'کلید دسترسی (API Key) نامعتبر یا منقضی شده است.'})
+      : super(details);
+}
+
+// --- Service Implementation ---
+
 class EnhancedRoutingService {
   static const String _apiKey =
-      'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjA5NDc3YzYzNDg1OTQzZTdhYmFmZGZkNjRjZDk0ODg3IiwiaCI6Im11cm11cjY0In0='; // API Key خودت رو اینجا بذار
-  static const String _baseUrl = 'https://api.openrouteservice.org';
+      'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjA5NDc3YzYzNDg1OTQzZTdhYmFmZGZkNjRjZDk0ODg3IiwiaCI6Im11cm11cjY0In0=';
+  static const String _orsBaseUrl = 'https://api.openrouteservice.org';
+  static const String _osrmBaseUrl = 'https://router.project-osrm.org';
 
-  // Fallback API برای حالت خطا
-
+  /// Fetches a single route, with a fallback mechanism from ORS to OSRM.
+  /// Throws a [RoutingException] or its subclasses if no route can be found.
   static Future<RouteInfo> getRoute(
     LatLng start,
     LatLng end,
     TransportMode mode,
   ) async {
     try {
-      // اول با OpenRouteService تست کن
+      // 1. Attempt with OpenRouteService
       return await _getRouteFromORS(start, end, mode);
-    } catch (e) {
-      print('خطا در OpenRouteService: $e');
+    } on Exception catch (e) {
+      print('ORS failed: $e. Falling back to OSRM.');
       try {
-        // اگر خطا داد، از OSRM استفاده کن
+        // 2. Attempt with OSRM as a fallback
         return await _getRouteFromOSRM(start, end, mode);
-      } catch (e2) {
-        print('خطا در OSRM: $e2');
-        // در آخر از محاسبه ساده استفاده کن
-        return _getSimpleRoute(start, end, mode);
+      } on Exception catch (e2) {
+        print('OSRM also failed: $e2. No further fallbacks.');
+        // 3. If both services fail, throw the most relevant error.
+        // Prefer showing a network error if it was the root cause.
+        if (e is NetworkException || e2 is NetworkException) {
+          throw NetworkException();
+        }
+        // Otherwise, throw the original error from ORS or a generic no-route error.
+        if (e is NoRouteFoundException) throw e;
+        throw NoRouteFoundException();
       }
     }
   }
 
-  // OpenRouteService API
+  /// Fetches a route from the OpenRouteService API.
   static Future<RouteInfo> _getRouteFromORS(
     LatLng start,
     LatLng end,
     TransportMode mode,
   ) async {
-    // بررسی API Key
-    if (_apiKey == 'YOUR_API_KEY_HERE' || _apiKey.isEmpty) {
-      throw Exception('API Key تنظیم نشده است');
+    if (_apiKey.contains('YOUR_API_KEY') || _apiKey.isEmpty) {
+      throw ApiKeyException(details: 'کلید دسترسی (API Key) برای OpenRouteService تنظیم نشده است.');
     }
 
-    String profile = _getModeProfile(mode);
-    final url = Uri.parse('$_baseUrl/v2/directions/$profile');
-
-    final requestBody = {
+    final profile = _getModeProfileORS(mode);
+    final url = Uri.parse('$_orsBaseUrl/v2/directions/$profile');
+    final requestBody = jsonEncode({
       'coordinates': [
         [start.longitude, start.latitude],
         [end.longitude, end.latitude],
       ],
       'instructions': true,
-      'geometry': true,
-    };
-
-    print('درخواست به: $url');
-    print('محتوای درخواست: ${jsonEncode(requestBody)}');
+      'geometry_format': 'geojson', // More standard format
+    });
 
     try {
       final response = await http
@@ -66,153 +100,151 @@ class EnhancedRoutingService {
             headers: {
               'Authorization': _apiKey,
               'Content-Type': 'application/json; charset=utf-8',
-              'Accept': 'application/json',
             },
-            body: jsonEncode(requestBody),
+            body: requestBody,
           )
-          .timeout(Duration(seconds: 15)); // Timeout اضافه کردیم
+          .timeout(const Duration(seconds: 15));
 
-      print('Status Code: ${response.statusCode}');
-      print('Response: ${response.body}');
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        if (data['routes'] == null || data['routes'].isEmpty) {
-          throw Exception('مسیری یافت نشد');
+        if (data['routes'] == null || (data['routes'] as List).isEmpty) {
+          throw NoRouteFoundException();
         }
 
         final route = data['routes'][0];
         final summary = route['summary'];
-
-        if (route['geometry'] == null ||
-            route['geometry']['coordinates'] == null) {
-          throw Exception('اطلاعات هندسی مسیر یافت نشد');
-        }
-
         final coordinates = (route['geometry']['coordinates'] as List)
             .map((coord) => LatLng(coord[1].toDouble(), coord[0].toDouble()))
             .toList();
 
-        String instructions = '';
-        if (route['segments'] != null) {
-          for (var segment in route['segments']) {
-            if (segment['steps'] != null) {
-              for (var step in segment['steps']) {
-                instructions += '${step['instruction'] ?? 'ادامه دهید'}\n';
-              }
-            }
-          }
-        }
+        String instructions = (route['segments'][0]['steps'] as List)
+            .map((step) => step['instruction'] as String)
+            .join('\n');
 
         return RouteInfo(
           coordinates: coordinates,
           distance: (summary['distance'] ?? 0) / 1000.0,
           duration: (summary['duration'] ?? 0) / 60.0,
-          instructions: instructions.trim(),
+          instructions: instructions,
           mode: mode,
         );
-      } else if (response.statusCode == 401) {
-        throw Exception('API Key نامعتبر است');
-      } else if (response.statusCode == 403) {
-        throw Exception('دسترسی مجاز نیست - API Key را بررسی کنید');
-      } else if (response.statusCode == 429) {
-        throw Exception('حد مجاز درخواست روزانه تمام شده');
       } else {
-        final errorData = jsonDecode(response.body);
-        throw Exception(
-          'خطا ${response.statusCode}: ${errorData['error']?['message'] ?? 'خطای نامشخص'}',
-        );
+        // Handle specific API error codes
+        switch (response.statusCode) {
+          case 401:
+          case 403:
+            throw ApiKeyException();
+          case 404:
+            throw NoRouteFoundException();
+          case 429:
+            throw ApiKeyException(details: 'ظرفیت استفاده از سرویس مسیریابی تکمیل شده است.');
+          default:
+            final errorMessage = data['error']?['message'] ?? 'خطای نامشخص از سرور';
+            throw RoutingException('خطا ${response.statusCode}: $errorMessage');
+        }
       }
     } on SocketException {
-      throw Exception('مشکل اتصال به اینترنت');
+      throw NetworkException();
+    } on TimeoutException {
+      throw NetworkException();
     } on HttpException {
-      throw Exception('خطا در ارسال درخواست HTTP');
+      throw RoutingException('خطا در برقراری ارتباط با سرور.');
     } on FormatException {
-      throw Exception('خطا در پردازش پاسخ سرور');
+      throw RoutingException('پاسخ دریافت شده از سرور فرمت معتبری ندارد.');
     }
   }
 
-  // OSRM Fallback (رایگان و بدون API Key)
+  /// Fetches a route from the public OSRM API.
   static Future<RouteInfo> _getRouteFromOSRM(
     LatLng start,
     LatLng end,
     TransportMode mode,
   ) async {
-    String profile = mode == TransportMode.walking ? 'foot' : 'driving';
-
+    final profile = _getModeProfileOSRM(mode);
     final url = Uri.parse(
-      'https://router.project-osrm.org/route/v1/$profile/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson',
+      '$_osrmBaseUrl/route/v1/$profile/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson',
     );
 
-    print('Fallback درخواست به OSRM: $url');
+    try {
+      final response = await http.get(url).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
 
-    final response = await http.get(url).timeout(Duration(seconds: 10));
+        if (data['code'] != 'Ok' || data['routes'] == null || (data['routes'] as List).isEmpty) {
+          throw NoRouteFoundException();
+        }
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+        final route = data['routes'][0];
+        final geometry = route['geometry']['coordinates'] as List;
+        final coordinates = geometry
+            .map((coord) => LatLng(coord[1].toDouble(), coord[0].toDouble()))
+            .toList();
 
-      if (data['routes'] == null || data['routes'].isEmpty) {
-        throw Exception('مسیری در OSRM یافت نشد');
+        return RouteInfo(
+          coordinates: coordinates,
+          distance: (route['distance'] ?? 0) / 1000.0,
+          duration: (route['duration'] ?? 0) / 60.0,
+          instructions: 'مسیر محاسبه شده با OSRM',
+          mode: mode,
+        );
+      } else {
+        throw RoutingException('سرویس پشتیبان مسیریابی (OSRM) با خطا مواجه شد: ${response.statusCode}');
       }
-
-      final route = data['routes'][0];
-      final geometry = route['geometry']['coordinates'] as List;
-
-      final coordinates = geometry
-          .map((coord) => LatLng(coord[1].toDouble(), coord[0].toDouble()))
-          .toList();
-
-      return RouteInfo(
-        coordinates: coordinates,
-        distance: route['distance'] / 1000.0,
-        duration: route['duration'] / 60.0,
-        instructions: 'مسیر محاسبه شده با OSRM',
-        mode: mode,
-      );
-    } else {
-      throw Exception('OSRM: ${response.statusCode}');
+    } on SocketException {
+      throw NetworkException();
+    } on TimeoutException {
+      throw NetworkException();
+    } on HttpException {
+      throw RoutingException('خطا در برقراری ارتباط با سرور OSRM.');
+    } on FormatException {
+      throw RoutingException('پاسخ دریافت شده از سرور OSRM فرمت معتبری ندارد.');
     }
   }
 
-  // محاسبه ساده (در صورت خطای همه سرویس‌ها)
-  static RouteInfo _getSimpleRoute(
+  /// Fetches routes for multiple transport modes.
+  /// Throws an exception if no routes can be found for any mode.
+  static Future<List<RouteInfo>> getMultipleRoutes(
     LatLng start,
-    LatLng end,
-    TransportMode mode,
-  ) {
-    const Distance distance = Distance();
-    final double distanceKm = distance.as(LengthUnit.Kilometer, start, end);
+    LatLng end, {
+    TransportMode? preferredMode,
+  }) async {
+    final List<RouteInfo> routes = [];
+    Exception? lastError;
+    
+    // Create a unique list of modes, with preferred mode first.
+    final modes = <TransportMode>{
+      if (preferredMode != null) preferredMode,
+      ...TransportMode.values,
+    }.toList();
 
-    // محاسبه زمان تقریبی بر اساس نوع حمل‌ونقل
-    double avgSpeed; // km/h
-    switch (mode) {
-      case TransportMode.driving:
-        avgSpeed = 50;
-        break;
-      case TransportMode.walking:
-        avgSpeed = 5;
-        break;
-      case TransportMode.cycling:
-        avgSpeed = 20;
-        break;
+    for (final mode in modes) {
+      try {
+        final route = await getRoute(start, end, mode);
+        // Prevent adding duplicate routes for the same mode
+        if (!routes.any((r) => r.mode == mode)) {
+          routes.add(route);
+        }
+      } on Exception catch (e) {
+        print('Could not get route for ${mode.toString()}: $e');
+        lastError = e;
+      }
     }
 
-    final double durationMinutes = (distanceKm / avgSpeed) * 60;
+    if (routes.isEmpty) {
+      // If no routes were found for any mode, throw the last known error,
+      // or a generic "no route found" exception.
+      if (lastError != null) throw lastError;
+      throw NoRouteFoundException();
+    }
 
-    // خط مستقیم بین دو نقطه
-    final coordinates = [start, end];
-
-    return RouteInfo(
-      coordinates: coordinates,
-      distance: distanceKm,
-      duration: durationMinutes,
-      instructions: 'مسیر خط مستقیم محاسبه شده (تقریبی)',
-      mode: mode,
-    );
+    return routes;
   }
+  
+  // --- Helper Methods ---
 
-  static String _getModeProfile(TransportMode mode) {
+  static String _getModeProfileORS(TransportMode mode) {
     switch (mode) {
       case TransportMode.driving:
         return 'driving-car';
@@ -223,49 +255,15 @@ class EnhancedRoutingService {
     }
   }
 
-  // تست اتصال به API
-  static Future<bool> testConnection() async {
-    try {
-      final response = await http
-          .get(
-            Uri.parse('$_baseUrl/health'),
-            headers: {'Authorization': _apiKey},
-          )
-          .timeout(Duration(seconds: 5));
-
-      return response.statusCode == 200;
-    } catch (e) {
-      return false;
+  static String _getModeProfileOSRM(TransportMode mode) {
+    switch (mode) {
+      case TransportMode.walking:
+        return 'foot';
+      case TransportMode.cycling:
+        return 'bike';
+      case TransportMode.driving:
+      default:
+        return 'driving';
     }
-  }
-
-  // دریافت چندین مسیر
-  static Future<List<RouteInfo>> getMultipleRoutes(
-    LatLng start,
-    LatLng end, {
-    TransportMode? preferredMode,
-  }) async {
-    final List<RouteInfo> routes = [];
-
-    // اولویت دادن به مد انتخاب شده
-    final modes = <TransportMode>{
-      if (preferredMode != null) preferredMode,
-      ...TransportMode.values,
-    }.toList();
-
-    for (TransportMode mode in modes) {
-      try {
-        final route = await getRoute(start, end, mode);
-        routes.add(route);
-      } catch (e) {
-        print('خطا در دریافت مسیر ${mode.toString()}: $e');
-      }
-    }
-
-    if (routes.isEmpty) {
-      routes.add(_getSimpleRoute(start, end, TransportMode.driving));
-    }
-
-    return routes;
   }
 }
